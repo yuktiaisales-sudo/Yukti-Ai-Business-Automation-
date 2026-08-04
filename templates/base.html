@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+
+<title>{% block title %}Yukti-AI CRM{% endblock %}</title>
+
+<link rel="stylesheet"
+href="{{ url_for('static', filename='css/dashboard.css') }}">
+
+<link rel="stylesheet"
+href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+
+</head>
+
+<body>
+
+<div class="layout">
+
+{% include "components/sidebar.html" %}
+
+<div class="main">
+
+{% include "components/topbar.html" %}
+
+<div class="page">
+
+{% block content %}
+{% endblock %}
+
+</div>
+
+{% include "components/footer.html" %}
+
+</div>
+
+</div>
+
+</body>
+
+</html>

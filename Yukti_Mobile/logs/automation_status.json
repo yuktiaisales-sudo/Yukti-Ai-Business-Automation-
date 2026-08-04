@@ -1,0 +1,29 @@
+{
+    "Outlook Reader": {
+        "status": "Running",
+        "records": 354,
+        "last_run": "09:30",
+        "errors": 0
+    },
+
+    "Google Sheet": {
+        "status": "Connected",
+        "records": 342,
+        "last_run": "09:31",
+        "errors": 0
+    },
+
+    "Old CRM": {
+        "status": "Completed",
+        "records": 342,
+        "last_run": "09:32",
+        "errors": 0
+    },
+
+    "Power BI": {
+        "status": "Completed",
+        "records": 342,
+        "last_run": "09:33",
+        "errors": 0
+    }
+}

@@ -1,0 +1,14 @@
+{
+    "comp": "",
+    "person": "",
+    "addr": "",
+    "mob": "",
+    "email": "",
+    "smtp_server": "pacificacompanies.icewarpcloud.in",
+    "smtp_port": "587",
+    "smtp_email": "test@pacificacompanies.in",
+    "smtp_password": "Autoemail@#123",
+    "to_emails": "vshah@pacificacompanies.in",
+    "raw_data_path": "D:/Vipul Personal/CRM Automation work/In4 CRM/Raw Data",
+    "master_file_dest": "D:/Vipul Personal/CRM Automation work/In4 CRM/IN4 Input"
+}

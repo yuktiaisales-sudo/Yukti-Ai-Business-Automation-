@@ -1,0 +1,63 @@
+<div class="cards">
+
+<div class="card">
+
+<h3>Total Leads</h3>
+
+<h1>{{ summary.total_leads }}</h1>
+
+<p>+18% This Month</p>
+
+</div>
+
+<div class="card">
+
+<h3>Today's Leads</h3>
+
+<h1>{{ summary.today_leads }}</h1>
+
+<p>Today</p>
+
+</div>
+
+<div class="card">
+
+<h3>Automation Saved</h3>
+
+<h1>{{ "%.0f"|format(summary.automation_hours) }} hrs</h1>
+
+<p>This Month</p>
+
+</div>
+
+<div class="card">
+
+<h3>CRM Uploaded</h3>
+
+<h1>{{ summary.crm_uploaded }}</h1>
+
+<p>96.7%</p>
+
+</div>
+
+<div class="card">
+
+<h3>Pending Upload</h3>
+
+<h1>{{ summary.pending_upload }}</h1>
+
+<p>Waiting</p>
+
+</div>
+
+<div class="card">
+
+<h3>Duplicate Leads</h3>
+
+<h1>{{ summary.duplicate_leads }}</h1>
+
+<p>Blocked</p>
+
+</div>
+
+</div>

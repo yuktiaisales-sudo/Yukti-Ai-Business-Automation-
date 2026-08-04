@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+
+{% block title %}
+Dashboard
+{% endblock %}
+
+{% block page_title %}
+Dashboard
+{% endblock %}
+
+{% block content %}
+
+{% include "components/cards.html" %}
+
+<div class="tablebox">
+
+<h2>Recent Leads</h2>
+{% include "components/automation_status.html" %}
+
+{% include "components/activity_timeline.html" %}
+
+{% include "components/system_health.html" %}
+
+{% include "components/ai_assistant.html" %}
+
+<table>
+
+<tr>
+<th>Name</th>
+<th>Mobile</th>
+<th>Project</th>
+<th>CRM</th>
+<th>Status</th>
+</tr>
+
+<tr>
+<td>Rahul Patel</td>
+<td>9876543210</td>
+<td>Hillcrest</td>
+<td>In4 CRM</td>
+<td>Uploaded</td>
+</tr>
+
+<tr>
+<td>Neha Shah</td>
+<td>9825012345</td>
+<td>Amara</td>
+<td>Google Sheet</td>
+<td>Pending</td>
+</tr>
+
+<tr>
+<td>Amit Joshi</td>
+<td>9898989898</td>
+<td>Casa Lakeside</td>
+<td>Old CRM</td>
+<td>Duplicate</td>
+</tr>
+
+</table>
+
+</div>
+
+{% endblock %}

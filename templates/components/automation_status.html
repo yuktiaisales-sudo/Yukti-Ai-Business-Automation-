@@ -1,0 +1,48 @@
+<div class="tablebox">
+
+<h2>⚡ Automation Control Center</h2>
+
+<table>
+
+<tr>
+    <th>Automation</th>
+    <th>Status</th>
+    <th>Last Run</th>
+    <th>Records</th>
+</tr>
+
+{% for name, module in modules.items() %}
+
+<tr>
+
+    <td>{{ module.module_name }}</td>
+
+    <td>
+
+        {% if module.status == "Running" %}
+            <span class="green">🟢 Running</span>
+
+        {% elif module.status == "Completed" %}
+            <span class="green">🟢 Completed</span>
+
+        {% elif module.status == "Error" %}
+            <span class="red">🔴 Error</span>
+
+        {% else %}
+            <span class="yellow">🟡 {{ module.status }}</span>
+
+        {% endif %}
+
+    </td>
+
+    <td>{{ module.last_run }}</td>
+
+    <td>{{ module.records }}</td>
+
+</tr>
+
+{% endfor %}
+
+</table>
+
+</div>

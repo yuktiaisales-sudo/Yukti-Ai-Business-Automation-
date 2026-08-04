@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+
+<title>Users Dashboard</title>
+
+<style>
+
+body{
+    font-family:Segoe UI;
+    background:#eef3fa;
+    margin:20px;
+}
+
+h1{
+    color:#1558d6;
+}
+
+table{
+    width:100%;
+    border-collapse:collapse;
+    background:white;
+    box-shadow:0 2px 8px rgba(0,0,0,.10);
+}
+
+th{
+    background:#1558d6;
+    color:white;
+    padding:12px;
+}
+
+td{
+    padding:10px;
+    border-bottom:1px solid #ddd;
+    text-align:center;
+}
+
+tr:hover{
+    background:#f3f8ff;
+}
+
+.active{
+    color:green;
+    font-weight:bold;
+}
+
+.inactive{
+    color:red;
+    font-weight:bold;
+}
+
+</style>
+
+</head>
+
+<body>
+
+<h1>Users Dashboard</h1>
+
+<table>
+
+<thead>
+
+<tr>
+
+<th>Project</th>
+<th>User</th>
+<th>Status</th>
+<th>Today's Leads</th>
+<th>Instagram</th>
+<th>Facebook</th>
+<th>Website</th>
+<th>Live Chat</th>
+<th>Email Campaign</th>
+
+</tr>
+
+</thead>
+
+<tbody>
+
+{% for u in users %}
+
+<tr>
+
+<td>{{ u.project_name }}</td>
+
+<td>{{ u.user_name }}</td>
+
+<td>
+
+{% if u.active == 1 %}
+
+<span class="active">Active</span>
+
+{% else %}
+
+<span class="inactive">Inactive</span>
+
+{% endif %}
+
+</td>
+
+<td>--</td>
+
+<td>--</td>
+
+<td>--</td>
+
+<td>--</td>
+
+<td>--</td>
+
+<td>--</td>
+
+</tr>
+
+{% endfor %}
+
+</tbody>
+
+</table>
+
+</body>
+
+</html>

@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Projects Dashboard</title>
+
+    <style>
+        body{
+            font-family:Segoe UI;
+            background:#f5f7fb;
+            margin:25px;
+        }
+
+        h2{
+            color:#0b5ed7;
+            margin-bottom:25px;
+        }
+
+        table{
+            width:100%;
+            border-collapse:collapse;
+            background:white;
+            box-shadow:0 0 10px rgba(0,0,0,.08);
+        }
+
+        th{
+            background:#0b5ed7;
+            color:white;
+            padding:12px;
+            text-align:center;
+        }
+
+        td{
+            padding:10px;
+            border-bottom:1px solid #ddd;
+            text-align:center;
+        }
+
+        tr:hover{
+            background:#eef5ff;
+        }
+
+        .total{
+            font-weight:bold;
+            color:#0b5ed7;
+        }
+    </style>
+
+</head>
+
+<body>
+
+<h2>Projects Dashboard</h2>
+
+<table>
+
+<thead>
+
+<tr>
+    <th>Project</th>
+    <th>Total Leads</th>
+    <th>Users</th>
+    <th>Instagram</th>
+    <th>Facebook</th>
+    <th>Website</th>
+    <th>Google</th>
+    <th>Live Chat</th>
+    <th>Email Campaign</th>
+    <th>Housing</th>
+    <th>MagicBricks</th>
+    <th>99Acres</th>
+    <th>Other</th>
+</tr>
+
+</thead>
+
+<tbody>
+
+{% for p in projects %}
+
+<tr>
+    <td>{{ p.project_name }}</td>
+    <td class="total">{{ p.total_leads }}</td>
+    <td>{{ p.users }}</td>
+    <td>{{ p.instagram }}</td>
+    <td>{{ p.facebook }}</td>
+    <td>{{ p.website }}</td>
+    <td>{{ p.google }}</td>
+    <td>{{ p.live_chat }}</td>
+    <td>{{ p.email_campaign }}</td>
+    <td>{{ p.housing }}</td>
+    <td>{{ p.magicbricks }}</td>
+    <td>{{ p.source_99acres }}</td>
+    <td>{{ p.other }}</td>
+</tr>
+
+{% endfor %}
+
+</tbody>
+
+</table>
+
+</body>
+
+</html>

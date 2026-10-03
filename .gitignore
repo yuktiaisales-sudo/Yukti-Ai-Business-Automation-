@@ -1,0 +1,85 @@
+# ============================================================
+# Yukti-AI Business Automation - Git Ignore
+# ============================================================
+
+# Flutter / Dart
+.dart_tool/
+build/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+coverage/
+
+# Flutter generated files
+**/flutter/generated_plugin_registrant.*
+**/GeneratedPluginRegistrant.*
+
+# IDE files
+.idea/
+.vscode/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Python virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Python cache/testing
+.pytest_cache/
+.mypy_cache/
+
+# Local databases
+*.sqlite
+*.sqlite3
+*.db
+
+# Logs / temporary files
+*.log
+*.tmp
+*.temp
+
+# Archives / backups
+*.zip
+*.rar
+*.7z
+
+# Secrets / credentials
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+*secret*.txt
+*secrets*.txt
+
+# Known sensitive file
+Microsoft Tenant Secret Keys.txt
+
+# Windows local files
+Thumbs.db
+desktop.ini
+
+# Generated installers / builds
+*.apk
+*.aab
+*.exe
+*.msi
+
+# Local reports / exports
+*.csv
+# Local runtime/state files
+processed_emails.json
+processed_marketing_emails.json
+# Flutter ephemeral/generated platform files
+**/ephemeral/
+# Local Flutter reference copy
+crm_ai_Mobile app - Copy/

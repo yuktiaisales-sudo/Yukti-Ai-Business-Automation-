@@ -6,6 +6,18 @@ import sys
 import pandas as pd
 from datetime import datetime, timedelta
 from flask import request, jsonify
+import json
+import re
+import hashlib
+import secrets
+import smtplib
+import base64
+import hmac
+import hashlib
+import struct
+import time
+import urllib.parse
+from email.message import EmailMessage
 
 # Ensure local package paths are available for imports
 sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
@@ -90,6 +102,465 @@ def filter_data(df, filter_type, start_date=None, end_date=None):
 app = Flask(__name__)
 automation_engine = engine
 app.secret_key = "Yukti_AI_Enterprise_2026"
+
+# ============================================================
+# 📊 IN4 CRM - LEAD ASSIGNED REPORT DATA
+# ============================================================
+# NEW read-only data source for Yukti-AI mobile/web dashboard.
+# It is separate from the existing Old CRM Master File API.
+IN4_DB_FILE = r"D:\Yukti-Ai Business Automation\In4 Lead Report Automation\yuktiai_in4.db"
+
+
+def get_in4_summary(period="this_month", project="All", source="All", user="All"):
+    """Read the latest processed In4 Lead Assigned Report from SQLite."""
+    if not os.path.exists(IN4_DB_FILE):
+        return {
+            "success": False,
+            "connected": True,
+            "message": "In4 report database not found. Run In4_LeadAssignedReport_Automation.py first.",
+            "total_leads": 0,
+            "today_leads": 0,
+            "project_counts": {},
+            "source_counts": {},
+            "user_counts": {},
+            "project_source_counts": {},
+            "last_run": None,
+        }
+
+    conn = sqlite3.connect(IN4_DB_FILE)
+    try:
+        df = pd.read_sql_query("SELECT * FROM lead_assignments", conn)
+    finally:
+        conn.close()
+
+    if df.empty:
+        return {
+            "success": True,
+            "connected": True,
+            "data_source": "In4 CRM Lead Assigned Report",
+            "message": "In4 report database is empty.",
+            "total_leads": 0,
+            "today_leads": 0,
+            "project_counts": {},
+            "source_counts": {},
+            "user_counts": {},
+            "project_source_counts": {},
+            "last_run": None,
+        }
+
+    df["Assinged Date"] = pd.to_datetime(df["Assinged Date"], errors="coerce")
+    today = datetime.today().date()
+
+    if period == "today":
+        period_df = df[df["Assinged Date"].dt.date == today].copy()
+    elif period == "this_week":
+        start = today - timedelta(days=today.weekday())
+        period_df = df[
+            (df["Assinged Date"].dt.date >= start) &
+            (df["Assinged Date"].dt.date <= today)
+        ].copy()
+    elif period == "last_month":
+        if today.month == 1:
+            month, year = 12, today.year - 1
+        else:
+            month, year = today.month - 1, today.year
+        period_df = df[
+            (df["Assinged Date"].dt.month == month) &
+            (df["Assinged Date"].dt.year == year)
+        ].copy()
+    else:
+        period_df = df[
+            (df["Assinged Date"].dt.month == today.month) &
+            (df["Assinged Date"].dt.year == today.year)
+        ].copy()
+
+    today_df = df[df["Assinged Date"].dt.date == today].copy()
+
+    def apply_filters(frame):
+        result = frame.copy()
+
+        if project and project.casefold() != "all":
+            values = result["Project Name"].fillna("").astype(str).str.strip()
+            result = result[values.str.casefold() == project.casefold()]
+
+        if source and source.casefold() != "all":
+            values = result["Enquiry Source"].fillna("").astype(str).str.strip()
+            result = result[values.str.casefold() == source.casefold()]
+
+        if user and user.casefold() != "all":
+            values = result["Assinged To"].fillna("").astype(str).str.strip()
+            result = result[values.str.casefold() == user.casefold()]
+
+        return result
+
+    filtered = apply_filters(period_df)
+    filtered_today = apply_filters(today_df)
+
+    def counts(frame, column):
+        if column not in frame.columns:
+            return {}
+        return {
+            str(k): int(v)
+            for k, v in frame[column]
+                .fillna("Unknown")
+                .astype(str)
+                .str.strip()
+                .value_counts()
+                .to_dict()
+                .items()
+        }
+
+    project_source_counts = {}
+    for project_name, group in filtered.groupby("Project Name"):
+        project_source_counts[str(project_name)] = counts(group, "Enquiry Source")
+
+    return {
+        "success": True,
+        "connected": True,
+        "data_source": "In4 CRM Lead Assigned Report",
+        "total_leads": int(len(filtered)),
+        "today_leads": int(len(filtered_today)),
+        "project_counts": counts(filtered, "Project Name"),
+        "source_counts": counts(filtered, "Enquiry Source"),
+        "user_counts": counts(filtered, "Assinged To"),
+        "project_source_counts": project_source_counts,
+        "available_projects": sorted(
+            [str(x) for x in df["Project Name"].dropna().unique()]
+        ),
+        "available_sources": sorted(
+            [str(x) for x in df["Enquiry Source"].dropna().unique()]
+        ),
+        "available_users": sorted(
+            [str(x) for x in df["Assinged To"].dropna().unique()]
+        ),
+        "selected_period": period,
+        "selected_project": project or "All",
+        "selected_source": source or "All",
+        "selected_user": user or "All",
+        "last_run": datetime.fromtimestamp(
+            os.path.getmtime(IN4_DB_FILE)
+        ).strftime("%Y-%m-%d %H:%M:%S"),
+    }
+
+
+@app.route("/api/mobile/in4-data", methods=["GET"])
+def mobile_in4_data():
+    period = request.args.get("period", "this_month").strip().lower()
+    project = request.args.get("project", "All").strip()
+    source = request.args.get("source", "All").strip()
+    user = request.args.get("user", "All").strip()
+
+    period = {
+        "today": "today",
+        "this_week": "this_week",
+        "this week": "this_week",
+        "this_month": "this_month",
+        "this month": "this_month",
+        "last_month": "last_month",
+        "last month": "last_month",
+    }.get(period, "this_month")
+
+    try:
+        return jsonify(
+            get_in4_summary(
+                period=period,
+                project=project,
+                source=source,
+                user=user,
+            )
+        ), 200
+    except Exception as e:
+        print("In4 Mobile API error:", e)
+        return jsonify({
+            "success": False,
+            "connected": True,
+            "message": str(e),
+            "total_leads": 0,
+            "today_leads": 0,
+            "project_counts": {},
+            "source_counts": {},
+            "user_counts": {},
+            "project_source_counts": {},
+            "last_run": None,
+        }), 500
+
+
+# ============================================================
+# 📱 MOBILE APP API - LEAD RECORDS
+# ============================================================
+@app.route("/api/mobile/leads", methods=["GET"])
+def mobile_leads():
+    """
+    Read-only lead records from the same In4 SQLite database used by
+    the mobile Reports endpoint.
+
+    Filters:
+      period=today|yesterday|this_week|this_month|last_month
+      project=All|<project>
+      source=All|<source>
+      user=All|<assigned user>
+      search=<free text>
+    """
+    period = request.args.get("period", "this_month").strip().lower()
+    project = request.args.get("project", "All").strip()
+    source = request.args.get("source", "All").strip()
+    user = request.args.get("user", "All").strip()
+    search = request.args.get("search", "").strip()
+
+    period = {
+        "today": "today",
+        "yesterday": "yesterday",
+        "this_week": "this_week",
+        "this week": "this_week",
+        "this_month": "this_month",
+        "this month": "this_month",
+        "last_month": "last_month",
+        "last month": "last_month",
+    }.get(period, "this_month")
+
+    if not os.path.exists(IN4_DB_FILE):
+        return jsonify({
+            "success": False,
+            "message": "In4 report database not found.",
+            "leads": [],
+            "total_leads": 0,
+            "today_leads": 0,
+        }), 200
+
+    try:
+        conn = sqlite3.connect(IN4_DB_FILE)
+        try:
+            df = pd.read_sql_query("SELECT * FROM lead_assignments", conn)
+        finally:
+            conn.close()
+
+        if df.empty:
+            return jsonify({
+                "success": True,
+                "leads": [],
+                "total_leads": 0,
+                "today_leads": 0,
+                "available_projects": [],
+                "available_sources": [],
+                "available_users": [],
+            }), 200
+
+        if "Assinged Date" in df.columns:
+            df["Assinged Date"] = pd.to_datetime(
+                df["Assinged Date"],
+                errors="coerce"
+            )
+
+        today = datetime.today().date()
+
+        if period == "today":
+            period_df = df[df["Assinged Date"].dt.date == today].copy()
+        elif period == "yesterday":
+            yesterday = today - timedelta(days=1)
+            period_df = df[df["Assinged Date"].dt.date == yesterday].copy()
+        elif period == "this_week":
+            start = today - timedelta(days=today.weekday())
+            period_df = df[
+                (df["Assinged Date"].dt.date >= start) &
+                (df["Assinged Date"].dt.date <= today)
+            ].copy()
+        elif period == "last_month":
+            if today.month == 1:
+                month, year = 12, today.year - 1
+            else:
+                month, year = today.month - 1, today.year
+
+            period_df = df[
+                (df["Assinged Date"].dt.month == month) &
+                (df["Assinged Date"].dt.year == year)
+            ].copy()
+        else:
+            period_df = df[
+                (df["Assinged Date"].dt.month == today.month) &
+                (df["Assinged Date"].dt.year == today.year)
+            ].copy()
+
+        today_df = df[df["Assinged Date"].dt.date == today].copy()
+
+        def apply_filters(frame):
+            result = frame.copy()
+
+            if project.casefold() != "all" and "Project Name" in result.columns:
+                values = result["Project Name"].fillna("").astype(str).str.strip()
+                result = result[
+                    values.str.casefold() == project.casefold()
+                ]
+
+            if source.casefold() != "all" and "Enquiry Source" in result.columns:
+                values = result["Enquiry Source"].fillna("").astype(str).str.strip()
+                result = result[
+                    values.str.casefold() == source.casefold()
+                ]
+
+            if user.casefold() != "all" and "Assinged To" in result.columns:
+                values = result["Assinged To"].fillna("").astype(str).str.strip()
+                result = result[
+                    values.str.casefold() == user.casefold()
+                ]
+
+            if search:
+                searchable_columns = [
+                    "Customer Name",
+                    "Opportunity ID",
+                    "Contact Number",
+                    "Project Name",
+                    "Enquiry Source",
+                    "Assinged To",
+                ]
+
+                mask = pd.Series(False, index=result.index)
+
+                for column in searchable_columns:
+                    if column in result.columns:
+                        mask = mask | result[column].fillna("").astype(str).str.contains(
+                            search,
+                            case=False,
+                            regex=False,
+                        )
+
+                result = result[mask]
+
+            return result
+
+        filtered = apply_filters(period_df)
+        filtered_today = apply_filters(today_df)
+
+        # Newest leads first.
+        if "Assinged Date" in filtered.columns:
+            filtered = filtered.sort_values(
+                by="Assinged Date",
+                ascending=False,
+                na_position="last",
+            )
+
+        # Keep the mobile response bounded.
+        limit = min(
+            max(int(request.args.get("limit", "200")), 1),
+            500,
+        )
+
+        records = []
+
+        for _, row in filtered.head(limit).iterrows():
+            def text_value(column):
+                if column not in row.index:
+                    return ""
+                value = row[column]
+                if pd.isna(value):
+                    return ""
+                if isinstance(value, pd.Timestamp):
+                    return value.strftime("%Y-%m-%d %H:%M:%S")
+                return str(value).strip()
+
+            records.append({
+                "Customer Name": text_value("Customer Name"),
+                "Opportunity ID": text_value("Opportunity ID"),
+                "Contact Number": text_value("Contact Number"),
+                "Project Name": text_value("Project Name"),
+                "Enquiry Source": text_value("Enquiry Source"),
+                "Assinged By": text_value("Assinged By"),
+                "Assinged To": text_value("Assinged To"),
+                "Assinged Date": text_value("Assinged Date"),
+            })
+
+        return jsonify({
+            "success": True,
+            "connected": True,
+            "data_source": "In4 CRM Lead Assigned Report",
+            "total_leads": int(len(filtered)),
+            "today_leads": int(len(filtered_today)),
+            "returned": int(len(records)),
+            "leads": records,
+            "available_projects": sorted([
+                str(x).strip()
+                for x in df["Project Name"].dropna().unique()
+                if str(x).strip()
+            ]) if "Project Name" in df.columns else [],
+            "available_sources": sorted([
+                str(x).strip()
+                for x in df["Enquiry Source"].dropna().unique()
+                if str(x).strip()
+            ]) if "Enquiry Source" in df.columns else [],
+            "available_users": sorted([
+                str(x).strip()
+                for x in df["Assinged To"].dropna().unique()
+                if str(x).strip()
+            ]) if "Assinged To" in df.columns else [],
+            "last_run": datetime.fromtimestamp(
+                os.path.getmtime(IN4_DB_FILE)
+            ).strftime("%Y-%m-%d %H:%M:%S"),
+        }), 200
+
+    except Exception as e:
+        print("Mobile Leads API error:", e)
+        return jsonify({
+            "success": False,
+            "message": str(e),
+            "leads": [],
+            "total_leads": 0,
+            "today_leads": 0,
+        }), 500
+
+
+# ============================================================
+# 📱 MOBILE APP API - AUTOMATION STATUS
+# ============================================================
+@app.route("/api/mobile/automation-status", methods=["GET"])
+def mobile_automation_status():
+    """
+    Read-only automation monitoring endpoint.
+
+    It reads the existing automation_status table. It does not start,
+    stop, modify, or redesign any production automation.
+    """
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+
+        try:
+            cur = conn.cursor()
+            cur.execute("""
+                SELECT
+                    automation_name,
+                    status,
+                    last_run,
+                    records
+                FROM automation_status
+                ORDER BY automation_name
+            """)
+            rows = cur.fetchall()
+        finally:
+            conn.close()
+
+        automations = []
+
+        for row in rows:
+            automations.append({
+                "automation_name": row["automation_name"],
+                "status": row["status"],
+                "last_run": row["last_run"],
+                "records": row["records"],
+                "error": "",
+            })
+
+        return jsonify({
+            "success": True,
+            "automations": automations,
+        }), 200
+
+    except Exception as e:
+        print("Mobile Automation Status API error:", e)
+        return jsonify({
+            "success": False,
+            "message": str(e),
+            "automations": [],
+        }), 200
+
 
 # -------------------------------
 # 🔒 SESSION HELPERS
@@ -237,18 +708,196 @@ def analytics():
     return render_template("modules/analytics/index.html")
 
 
+import sqlite3
+
 @app.route("/users")
 def users():
 
-    model = UserModel()
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
 
-    users = model.get_all_users()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT *
+        FROM users
+        ORDER BY first_name
+    """)
+
+    users = cur.fetchall()
+    
+    print("=" * 60)
+    print("Total Users:", len(users))
+    print(users)
+    print("=" * 60)
+
+    conn.close()
 
     return render_template(
         "modules/users/index.html",
         users=users
     )
     
+    print("="*60)
+    print(users)
+    print(type(users))
+    print("="*60)
+    
+
+# ============================================================
+# 📱 MOBILE APP API - LIVE LEAD DATA
+# ============================================================
+@app.route("/api/mobile/data", methods=["GET"])
+def mobile_live_data():
+    """
+    Read the same latest Master File used by the Yukti-AI Dashboard
+    and expose a small JSON API for the mobile app.
+
+    Query parameters:
+      period=today|this_week|this_month|last_month
+      project=All|<project name>
+
+    This endpoint is read-only. It does not modify CRM data,
+    automation state, or the Master File.
+    """
+    period = request.args.get("period", "this_month").strip().lower()
+    project = request.args.get("project", "All").strip()
+
+    period_map = {
+        "today": "today",
+        "this week": "this_week",
+        "this_week": "this_week",
+        "this month": "this_month",
+        "this_month": "this_month",
+        "last month": "last_month",
+        "last_month": "last_month",
+    }
+
+    filter_type = period_map.get(period, "this_month")
+
+    output_folder = r"D:\Vipul Personal\CRM Automation work\Old CRM\Master File"
+
+    try:
+        files = [
+            f for f in os.listdir(output_folder)
+            if f.lower().endswith(".csv")
+        ]
+
+        if not files:
+            return jsonify({
+                "success": False,
+                "connected": True,
+                "message": "No Master File CSV found.",
+                "total_leads": 0,
+                "today_leads": 0,
+                "project_counts": {},
+                "last_run": None,
+            }), 200
+
+        # Use the newest file by filesystem modification time.
+        files.sort(
+            key=lambda f: os.path.getmtime(os.path.join(output_folder, f)),
+            reverse=True
+        )
+
+        latest_file = files[0]
+        file_path = os.path.join(output_folder, latest_file)
+
+        df = load_data(file_path)
+
+        # Today's count is calculated independently, then the same
+        # project filter is applied so the KPI follows the project dropdown.
+        today_df = filter_data(df, "today")
+        if project and project.lower() != "all" and "Preferred Projects" in today_df.columns:
+            selected_today = project.casefold()
+            today_values = (
+                today_df["Preferred Projects"]
+                .fillna("")
+                .astype(str)
+                .str.strip()
+            )
+            today_df = today_df[
+                today_values.str.casefold() == selected_today
+            ]
+        today_leads = len(today_df)
+
+        # Apply selected period.
+        period_df = filter_data(df, filter_type)
+
+        # Build project counts for the selected period BEFORE applying a
+        # project filter, so the mobile dashboard can display all projects.
+        all_project_counts = {}
+        if "Preferred Projects" in period_df.columns:
+            all_project_counts = {
+                str(k): int(v)
+                for k, v in period_df["Preferred Projects"]
+                .fillna("Unknown")
+                .astype(str)
+                .str.strip()
+                .value_counts()
+                .to_dict()
+                .items()
+            }
+
+        # Apply selected project.
+        filtered_df = period_df.copy()
+        if project and project.lower() != "all":
+            if "Preferred Projects" in filtered_df.columns:
+                selected = project.casefold()
+                project_values = (
+                    filtered_df["Preferred Projects"]
+                    .fillna("")
+                    .astype(str)
+                    .str.strip()
+                )
+                filtered_df = filtered_df[
+                    project_values.str.casefold() == selected
+                ]
+
+        total_leads = len(filtered_df)
+
+        project_counts = {}
+        if "Preferred Projects" in filtered_df.columns:
+            project_counts = {
+                str(k): int(v)
+                for k, v in filtered_df["Preferred Projects"]
+                .fillna("Unknown")
+                .astype(str)
+                .value_counts()
+                .to_dict()
+                .items()
+            }
+
+        last_run = datetime.fromtimestamp(
+            os.path.getmtime(file_path)
+        ).strftime("%Y-%m-%d %H:%M:%S")
+
+        return jsonify({
+            "success": True,
+            "connected": True,
+            "total_leads": int(total_leads),
+            "today_leads": int(today_leads),
+            "project_counts": project_counts,
+            "all_project_counts": all_project_counts,
+            "selected_period": filter_type,
+            "selected_project": project or "All",
+            "last_run": last_run,
+            "source_file": latest_file,
+        }), 200
+
+    except Exception as e:
+        print("Mobile API error:", e)
+        return jsonify({
+            "success": False,
+            "connected": True,
+            "message": str(e),
+            "total_leads": 0,
+            "today_leads": 0,
+            "project_counts": {},
+            "last_run": None,
+        }), 500
+
+
 @app.route("/api/update_status", methods=["POST"])
 
 def update_status():
@@ -330,6 +979,741 @@ def ai():
 </body>
 </html>
 """
+
+
+# ============================================================
+# MOBILE APP OTP AUTHENTICATION - STEP 1
+# ============================================================
+OTP_DB_FILE = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)),
+    "mobile_auth.db"
+)
+OTP_EXPIRY_SECONDS = 300
+OTP_MAX_ATTEMPTS = 5
+OTP_RESEND_SECONDS = 60
+
+def _otp_db():
+    conn = sqlite3.connect(OTP_DB_FILE)
+    conn.row_factory = sqlite3.Row
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS otp_requests (
+            request_id TEXT PRIMARY KEY,
+            destination TEXT NOT NULL,
+            purpose TEXT NOT NULL,
+            otp_hash TEXT NOT NULL,
+            created_at REAL NOT NULL,
+            expires_at REAL NOT NULL,
+            attempts INTEGER NOT NULL DEFAULT 0,
+            verified INTEGER NOT NULL DEFAULT 0
+        )
+    """)
+    conn.commit()
+    return conn
+
+def _hash_otp(otp):
+    return hashlib.sha256(otp.encode("utf-8")).hexdigest()
+
+def _looks_like_email(value):
+    return bool(re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", value))
+
+def _looks_like_mobile(value):
+    return bool(re.match(r"^\+?[0-9][0-9\s\-]{7,18}$", value))
+
+def _send_otp_email(destination, otp):
+    host = os.getenv("YUKTI_OTP_SMTP_HOST", "").strip()
+    port = int(os.getenv("YUKTI_OTP_SMTP_PORT", "587"))
+    user = os.getenv("YUKTI_OTP_SMTP_USER", "").strip()
+    password = os.getenv("YUKTI_OTP_SMTP_PASSWORD", "")
+    from_email = os.getenv("YUKTI_OTP_FROM_EMAIL", user).strip()
+    use_tls = os.getenv("YUKTI_OTP_SMTP_TLS", "true").strip().lower() in (
+        "1", "true", "yes"
+    )
+
+    if not host or not user or not password or not from_email:
+        raise RuntimeError("Email OTP delivery is not configured on the server.")
+
+    message = EmailMessage()
+    message["Subject"] = "Yukti-AI Security Verification OTP"
+    message["From"] = from_email
+    message["To"] = destination
+    message.set_content(
+        f"Your Yukti-AI verification OTP is: {otp}\n\n"
+        "This OTP is valid for 5 minutes.\n"
+        "If you did not request this code, please ignore this email."
+    )
+
+    # Gmail supports implicit SSL on port 465 and STARTTLS on port 587.
+    if port == 465:
+        with smtplib.SMTP_SSL(host, port, timeout=15) as smtp:
+            smtp.login(user, password)
+            smtp.send_message(message)
+    else:
+        with smtplib.SMTP(host, port, timeout=15) as smtp:
+            if use_tls:
+                smtp.starttls()
+            smtp.login(user, password)
+            smtp.send_message(message)
+
+def _send_otp_sms(destination, otp):
+    raise RuntimeError(
+        "Mobile OTP delivery is not configured yet. "
+        "Email OTP is available after SMTP configuration."
+    )
+
+@app.route("/api/mobile/auth/otp/request", methods=["POST"])
+def mobile_auth_otp_request():
+    try:
+        data = request.get_json(silent=True) or {}
+        destination = str(data.get("destination", "")).strip()
+        purpose = str(data.get("purpose", "settings_2fa")).strip()
+
+        if not destination:
+            return jsonify({
+                "success": False,
+                "message": "Mobile number or email address is required."
+            }), 400
+
+        is_email = _looks_like_email(destination)
+        is_mobile = _looks_like_mobile(destination)
+
+        if not is_email and not is_mobile:
+            return jsonify({
+                "success": False,
+                "message": "Enter a valid email address or mobile number."
+            }), 400
+
+        import time
+        now = time.time()
+        conn = _otp_db()
+
+        try:
+            destination_key = destination.casefold() if is_email else destination
+            recent = conn.execute("""
+                SELECT created_at
+                FROM otp_requests
+                WHERE destination = ? AND purpose = ? AND verified = 0
+                ORDER BY created_at DESC LIMIT 1
+            """, (destination_key, purpose)).fetchone()
+
+            if recent and now - float(recent["created_at"]) < OTP_RESEND_SECONDS:
+                wait_for = int(OTP_RESEND_SECONDS - (now - float(recent["created_at"])))
+                return jsonify({
+                    "success": False,
+                    "message": f"Please wait {max(wait_for, 1)} seconds before requesting another OTP."
+                }), 429
+
+            otp = f"{secrets.randbelow(1000000):06d}"
+            request_id = secrets.token_urlsafe(24)
+
+            conn.execute("""
+                INSERT INTO otp_requests (
+                    request_id, destination, purpose, otp_hash,
+                    created_at, expires_at, attempts, verified
+                )
+                VALUES (?, ?, ?, ?, ?, ?, 0, 0)
+            """, (
+                request_id, destination_key, purpose, _hash_otp(otp),
+                now, now + OTP_EXPIRY_SECONDS
+            ))
+            conn.commit()
+        finally:
+            conn.close()
+
+        try:
+            if is_email:
+                _send_otp_email(destination, otp)
+            else:
+                _send_otp_sms(destination, otp)
+        except Exception as delivery_error:
+            conn = _otp_db()
+            try:
+                conn.execute("DELETE FROM otp_requests WHERE request_id = ?", (request_id,))
+                conn.commit()
+            finally:
+                conn.close()
+
+            print("OTP delivery error:", delivery_error)
+            return jsonify({
+                "success": False,
+                "message": str(delivery_error),
+            }), 503
+
+        return jsonify({
+            "success": True,
+            "message": "OTP sent successfully.",
+            "request_id": request_id,
+            "expires_in": OTP_EXPIRY_SECONDS,
+            "delivery": "email" if is_email else "sms",
+        }), 200
+
+    except Exception as e:
+        print("OTP request API error:", e)
+        return jsonify({"success": False, "message": str(e)}), 500
+
+@app.route("/api/mobile/auth/otp/verify", methods=["POST"])
+def mobile_auth_otp_verify():
+    try:
+        data = request.get_json(silent=True) or {}
+        destination = str(data.get("destination", "")).strip()
+        otp = str(data.get("otp", "")).strip()
+        request_id = str(data.get("request_id", "")).strip()
+        purpose = str(data.get("purpose", "settings_2fa")).strip()
+
+        if not destination or not request_id:
+            return jsonify({
+                "success": False,
+                "message": "OTP verification request is incomplete."
+            }), 400
+
+        if not re.match(r"^\d{6}$", otp):
+            return jsonify({
+                "success": False,
+                "message": "Enter the 6-digit OTP."
+            }), 400
+
+        conn = _otp_db()
+        try:
+            row = conn.execute("""
+                SELECT * FROM otp_requests
+                WHERE request_id = ? AND purpose = ? LIMIT 1
+            """, (request_id, purpose)).fetchone()
+
+            if not row:
+                return jsonify({
+                    "success": False,
+                    "message": "OTP request was not found or has expired."
+                }), 404
+
+            import time
+            now = time.time()
+
+            if int(row["verified"]) == 1:
+                return jsonify({
+                    "success": False,
+                    "message": "This OTP has already been used."
+                }), 400
+
+            if now > float(row["expires_at"]):
+                return jsonify({
+                    "success": False,
+                    "message": "OTP has expired. Please request a new OTP."
+                }), 400
+
+            attempts = int(row["attempts"])
+            if attempts >= OTP_MAX_ATTEMPTS:
+                return jsonify({
+                    "success": False,
+                    "message": "Too many incorrect attempts. Please request a new OTP."
+                }), 429
+
+            submitted_destination = (
+                destination.casefold()
+                if _looks_like_email(destination)
+                else destination
+            )
+
+            if str(row["destination"]).strip() != submitted_destination:
+                return jsonify({
+                    "success": False,
+                    "message": "OTP destination does not match the request."
+                }), 400
+
+            if _hash_otp(otp) != str(row["otp_hash"]):
+                conn.execute("""
+                    UPDATE otp_requests
+                    SET attempts = attempts + 1
+                    WHERE request_id = ?
+                """, (request_id,))
+                conn.commit()
+
+                remaining = max(OTP_MAX_ATTEMPTS - attempts - 1, 0)
+                return jsonify({
+                    "success": False,
+                    "message": f"Incorrect OTP. {remaining} attempts remaining."
+                }), 400
+
+            conn.execute("""
+                UPDATE otp_requests SET verified = 1
+                WHERE request_id = ?
+            """, (request_id,))
+            conn.commit()
+
+            return jsonify({
+                "success": True,
+                "message": "OTP verified successfully.",
+                "verified": True,
+            }), 200
+        finally:
+            conn.close()
+
+    except Exception as e:
+        print("OTP verify API error:", e)
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+# ============================================================
+# AUTHENTICATOR / TOTP - STEP 2
+# ============================================================
+TOTP_DB_FILE = OTP_DB_FILE
+
+
+def _totp_db():
+    conn = sqlite3.connect(TOTP_DB_FILE)
+    conn.row_factory = sqlite3.Row
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS totp_accounts (
+            account_id TEXT PRIMARY KEY,
+            secret TEXT NOT NULL,
+            issuer TEXT NOT NULL,
+            account_name TEXT NOT NULL,
+            created_at REAL NOT NULL,
+            enabled INTEGER NOT NULL DEFAULT 0
+        )
+    """)
+    conn.commit()
+    return conn
+
+
+def _generate_totp_secret():
+    return base64.b32encode(secrets.token_bytes(20)).decode("ascii").rstrip("=")
+
+
+def _totp_code(secret, timestamp=None):
+    if timestamp is None:
+        timestamp = int(time.time())
+    counter = int(timestamp // 30)
+    padded = secret.upper() + ("=" * ((8 - len(secret) % 8) % 8))
+    key = base64.b32decode(padded, casefold=True)
+    digest = hmac.new(
+        key,
+        struct.pack(">Q", counter),
+        hashlib.sha1,
+    ).digest()
+    offset = digest[-1] & 0x0F
+    number = struct.unpack(">I", digest[offset:offset + 4])[0] & 0x7FFFFFFF
+    return f"{number % 1000000:06d}"
+
+
+def _totp_matches(secret, code):
+    try:
+        code = str(code).strip()
+        if not re.match(r"^\d{6}$", code):
+            return False
+        now = int(time.time())
+        # Allow the normal 30-second clock window plus one adjacent step
+        # in either direction for small device/server clock differences.
+        for offset in (-30, 0, 30):
+            if hmac.compare_digest(_totp_code(secret, now + offset), code):
+                return True
+        return False
+    except Exception:
+        return False
+
+
+@app.route("/api/mobile/auth/totp/setup", methods=["POST"])
+def mobile_auth_totp_setup():
+    try:
+        data = request.get_json(silent=True) or {}
+        account_id = str(data.get("account_id", "")).strip()
+        issuer = str(data.get("issuer", "Yukti-AI Business Automation")).strip()
+        account_name = str(data.get("account_name", "Yukti-AI Mobile")).strip()
+
+        if not account_id:
+            return jsonify({
+                "success": False,
+                "message": "Authenticator account identifier is required."
+            }), 400
+
+        conn = _totp_db()
+        try:
+            row = conn.execute(
+                "SELECT * FROM totp_accounts WHERE account_id = ?",
+                (account_id,)
+            ).fetchone()
+
+            if row and int(row["enabled"]) == 1:
+                return jsonify({
+                    "success": False,
+                    "message": "Authenticator is already enabled for this account."
+                }), 409
+
+            if row:
+                secret = str(row["secret"])
+                conn.execute("""
+                    UPDATE totp_accounts
+                    SET issuer = ?, account_name = ?
+                    WHERE account_id = ?
+                """, (issuer, account_name, account_id))
+            else:
+                secret = _generate_totp_secret()
+                conn.execute("""
+                    INSERT INTO totp_accounts (
+                        account_id, secret, issuer, account_name, created_at, enabled
+                    ) VALUES (?, ?, ?, ?, ?, 0)
+                """, (
+                    account_id, secret, issuer, account_name, time.time()
+                ))
+            conn.commit()
+        finally:
+            conn.close()
+
+        label = f"{issuer}:{account_name}"
+        otpauth_uri = (
+            "otpauth://totp/"
+            + urllib.parse.quote(label, safe="")
+            + "?secret="
+            + urllib.parse.quote(secret)
+            + "&issuer="
+            + urllib.parse.quote(issuer)
+            + "&algorithm=SHA1&digits=6&period=30"
+        )
+
+        return jsonify({
+            "success": True,
+            "otpauth_uri": otpauth_uri,
+            "secret": secret,
+            "algorithm": "SHA1",
+            "digits": 6,
+            "period": 30,
+        }), 200
+
+    except Exception as e:
+        print("TOTP setup API error:", e)
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+@app.route("/api/mobile/auth/totp/verify", methods=["POST"])
+def mobile_auth_totp_verify():
+    try:
+        data = request.get_json(silent=True) or {}
+        account_id = str(data.get("account_id", "")).strip()
+        code = str(data.get("code", "")).strip()
+
+        if not account_id or not re.match(r"^\d{6}$", code):
+            return jsonify({
+                "success": False,
+                "message": "Enter the 6-digit authenticator code."
+            }), 400
+
+        conn = _totp_db()
+        try:
+            row = conn.execute(
+                "SELECT * FROM totp_accounts WHERE account_id = ?",
+                (account_id,)
+            ).fetchone()
+
+            if not row:
+                return jsonify({
+                    "success": False,
+                    "message": "Authenticator setup was not found."
+                }), 404
+
+            if not _totp_matches(str(row["secret"]), code):
+                return jsonify({
+                    "success": False,
+                    "message": "Invalid authenticator code."
+                }), 400
+
+            conn.execute("""
+                UPDATE totp_accounts
+                SET enabled = 1
+                WHERE account_id = ?
+            """, (account_id,))
+            conn.commit()
+
+            return jsonify({
+                "success": True,
+                "message": "Authenticator verified and enabled.",
+                "enabled": True,
+            }), 200
+        finally:
+            conn.close()
+
+    except Exception as e:
+        print("TOTP verify API error:", e)
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+# ============================================================
+# 📱 MOBILE LOGIN + SETTINGS 2FA ENFORCEMENT
+# ============================================================
+MOBILE_AUTH_ACCOUNT_ID = "yuktiai-mobile"
+MOBILE_AUTH_USERNAME = "admin"
+MOBILE_AUTH_PASSWORD = "vipul123"
+
+
+def _mobile_registered_email():
+    return os.getenv("YUKTI_OTP_FROM_EMAIL", "").strip()
+
+
+def _mobile_totp_enabled(account_id=MOBILE_AUTH_ACCOUNT_ID):
+    conn = _totp_db()
+    try:
+        row = conn.execute(
+            "SELECT enabled FROM totp_accounts WHERE account_id = ?",
+            (account_id,)
+        ).fetchone()
+        return bool(row and int(row["enabled"]) == 1)
+    finally:
+        conn.close()
+
+
+@app.route("/api/mobile/auth/2fa/status", methods=["GET"])
+def mobile_auth_2fa_status():
+    try:
+        enabled = _mobile_totp_enabled(MOBILE_AUTH_ACCOUNT_ID)
+        return jsonify({
+            "success": True,
+            "account_id": MOBILE_AUTH_ACCOUNT_ID,
+            "enabled": enabled,
+            "authenticator_enabled": enabled,
+            "email_otp_available": bool(_mobile_registered_email()),
+        }), 200
+    except Exception as e:
+        print("Mobile 2FA status API error:", e)
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+@app.route("/api/mobile/auth/login", methods=["POST"])
+def mobile_auth_login():
+    """Authenticate the mobile user and enforce the Settings 2FA state."""
+    try:
+        data = request.get_json(silent=True) or {}
+        username = str(data.get("username", "")).strip()
+        password = str(data.get("password", ""))
+
+        if username != MOBILE_AUTH_USERNAME or password != MOBILE_AUTH_PASSWORD:
+            return jsonify({
+                "success": False,
+                "message": "Invalid username or password."
+            }), 401
+
+        enabled = _mobile_totp_enabled(MOBILE_AUTH_ACCOUNT_ID)
+        registered_email = _mobile_registered_email()
+
+        if enabled:
+            return jsonify({
+                "success": True,
+                "authenticated": False,
+                "requires_2fa": True,
+                "account_id": MOBILE_AUTH_ACCOUNT_ID,
+                "registered_email": registered_email,
+                "methods": ["authenticator", "email_otp"],
+                "message": "Two-factor verification is required."
+            }), 200
+
+        return jsonify({
+            "success": True,
+            "authenticated": True,
+            "requires_2fa": False,
+            "account_id": MOBILE_AUTH_ACCOUNT_ID,
+            "message": "Login successful."
+        }), 200
+
+    except Exception as e:
+        print("Mobile login API error:", e)
+        return jsonify({
+            "success": False,
+            "message": str(e)
+        }), 500
+
+
+@app.route("/api/mobile/auth/login/2fa/totp", methods=["POST"])
+def mobile_login_totp_verify():
+    """Verify TOTP for an already password-authenticated login attempt."""
+    try:
+        data = request.get_json(silent=True) or {}
+        account_id = str(data.get("account_id", "")).strip()
+        code = str(data.get("code", "")).strip()
+
+        if account_id != MOBILE_AUTH_ACCOUNT_ID:
+            return jsonify({"success": False, "message": "Invalid authentication account."}), 403
+
+        if not _mobile_totp_enabled(account_id):
+            return jsonify({"success": False, "message": "Two-factor authentication is not enabled."}), 400
+
+        if not re.match(r"^\d{6}$", code):
+            return jsonify({"success": False, "message": "Enter the 6-digit authenticator code."}), 400
+
+        conn = _totp_db()
+        try:
+            row = conn.execute(
+                "SELECT secret FROM totp_accounts WHERE account_id = ? AND enabled = 1",
+                (account_id,)
+            ).fetchone()
+        finally:
+            conn.close()
+
+        if not row or not _totp_matches(str(row["secret"]), code):
+            return jsonify({"success": False, "message": "Invalid authenticator code."}), 401
+
+        return jsonify({
+            "success": True,
+            "authenticated": True,
+            "method": "authenticator",
+            "message": "Two-factor verification successful."
+        }), 200
+
+    except Exception as e:
+        print("Mobile login TOTP API error:", e)
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+@app.route("/api/mobile/auth/login/2fa/email/request", methods=["POST"])
+def mobile_login_email_otp_request():
+    """Send login OTP only to the account's registered email address."""
+    try:
+        data = request.get_json(silent=True) or {}
+        account_id = str(data.get("account_id", "")).strip()
+
+        if account_id != MOBILE_AUTH_ACCOUNT_ID:
+            return jsonify({"success": False, "message": "Invalid authentication account."}), 403
+
+        if not _mobile_totp_enabled(account_id):
+            return jsonify({"success": False, "message": "Two-factor authentication is not enabled."}), 400
+
+        destination = _mobile_registered_email()
+        if not destination or not _looks_like_email(destination):
+            return jsonify({
+                "success": False,
+                "message": "No registered email is configured for this account."
+            }), 503
+
+        now = time.time()
+        purpose = "login_2fa"
+        conn = _otp_db()
+        try:
+            recent = conn.execute("""
+                SELECT created_at
+                FROM otp_requests
+                WHERE destination = ? AND purpose = ? AND verified = 0
+                ORDER BY created_at DESC LIMIT 1
+            """, (destination.casefold(), purpose)).fetchone()
+
+            if recent and now - float(recent["created_at"]) < OTP_RESEND_SECONDS:
+                wait_for = int(OTP_RESEND_SECONDS - (now - float(recent["created_at"])))
+                return jsonify({
+                    "success": False,
+                    "message": f"Please wait {max(wait_for, 1)} seconds before requesting another OTP."
+                }), 429
+
+            otp = f"{secrets.randbelow(1000000):06d}"
+            request_id = secrets.token_urlsafe(24)
+            conn.execute("""
+                INSERT INTO otp_requests (
+                    request_id, destination, purpose, otp_hash,
+                    created_at, expires_at, attempts, verified
+                )
+                VALUES (?, ?, ?, ?, ?, ?, 0, 0)
+            """, (
+                request_id,
+                destination.casefold(),
+                purpose,
+                _hash_otp(otp),
+                now,
+                now + OTP_EXPIRY_SECONDS,
+            ))
+            conn.commit()
+        finally:
+            conn.close()
+
+        try:
+            _send_otp_email(destination, otp)
+        except Exception as delivery_error:
+            conn = _otp_db()
+            try:
+                conn.execute("DELETE FROM otp_requests WHERE request_id = ?", (request_id,))
+                conn.commit()
+            finally:
+                conn.close()
+            print("Login OTP delivery error:", delivery_error)
+            return jsonify({"success": False, "message": str(delivery_error)}), 503
+
+        return jsonify({
+            "success": True,
+            "request_id": request_id,
+            "expires_in": OTP_EXPIRY_SECONDS,
+            "message": "Login OTP sent successfully."
+        }), 200
+
+    except Exception as e:
+        print("Mobile login email OTP request error:", e)
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+@app.route("/api/mobile/auth/login/2fa/email/verify", methods=["POST"])
+def mobile_login_email_otp_verify():
+    """Verify the one-time login OTP and complete the second factor."""
+    try:
+        data = request.get_json(silent=True) or {}
+        account_id = str(data.get("account_id", "")).strip()
+        request_id = str(data.get("request_id", "")).strip()
+        otp = str(data.get("otp", "")).strip()
+
+        if account_id != MOBILE_AUTH_ACCOUNT_ID:
+            return jsonify({"success": False, "message": "Invalid authentication account."}), 403
+        if not _mobile_totp_enabled(account_id):
+            return jsonify({"success": False, "message": "Two-factor authentication is not enabled."}), 400
+        if not request_id or not re.match(r"^\d{6}$", otp):
+            return jsonify({"success": False, "message": "Enter the 6-digit email OTP."}), 400
+
+        destination = _mobile_registered_email()
+        if not destination:
+            return jsonify({"success": False, "message": "No registered email is configured."}), 503
+
+        conn = _otp_db()
+        try:
+            row = conn.execute("""
+                SELECT * FROM otp_requests
+                WHERE request_id = ? AND purpose = ? LIMIT 1
+            """, (request_id, "login_2fa")).fetchone()
+
+            if not row:
+                return jsonify({"success": False, "message": "OTP request was not found or has expired."}), 404
+
+            now = time.time()
+            if int(row["verified"]) == 1:
+                return jsonify({"success": False, "message": "This OTP has already been used."}), 400
+            if now > float(row["expires_at"]):
+                return jsonify({"success": False, "message": "OTP has expired. Please request a new OTP."}), 400
+
+            attempts = int(row["attempts"])
+            if attempts >= OTP_MAX_ATTEMPTS:
+                return jsonify({"success": False, "message": "Too many incorrect attempts. Please request a new OTP."}), 429
+
+            if str(row["destination"]).strip() != destination.casefold():
+                return jsonify({"success": False, "message": "OTP destination does not match the account."}), 400
+
+            if _hash_otp(otp) != str(row["otp_hash"]):
+                conn.execute(
+                    "UPDATE otp_requests SET attempts = attempts + 1 WHERE request_id = ?",
+                    (request_id,)
+                )
+                conn.commit()
+                remaining = max(OTP_MAX_ATTEMPTS - attempts - 1, 0)
+                return jsonify({
+                    "success": False,
+                    "message": f"Incorrect OTP. {remaining} attempts remaining."
+                }), 401
+
+            conn.execute(
+                "UPDATE otp_requests SET verified = 1 WHERE request_id = ?",
+                (request_id,)
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        return jsonify({
+            "success": True,
+            "authenticated": True,
+            "method": "email_otp",
+            "message": "Two-factor verification successful."
+        }), 200
+
+    except Exception as e:
+        print("Mobile login email OTP verify error:", e)
+        return jsonify({"success": False, "message": str(e)}), 500
 
 
 # -------------------------------

@@ -182,107 +182,104 @@ def update_dashboard(
 # ===========================================
 # UPDATE PROJECT SUMMARY
 # ===========================================
+def update_user_summary(df, cur):
 
-        print("Updating Project Summary...")
+    print("=" * 60)
+    print("Updating User Summary...")
+    print("=" * 60)
 
-        master_file = None
+    cur.execute("DELETE FROM user_summary")
 
-        for file in os.listdir(MASTER_FOLDER):
-            if file.endswith(".csv"):
-                master_file = os.path.join(MASTER_FOLDER, file)
+    df["Assign_To"] = df["Assign_To"].fillna("Unassigned")
+    df["Project_Code"] = df["Project_Code"].fillna("Unknown")
+    df["Enquiry_Source"] = df["Enquiry_Source"].fillna("Other")
+    
+    print(df[["Assign_To", "Project_Code"]].head(10))
+    print("Unique Assign_To:", df["Assign_To"].unique())
 
-        if master_file:
+    users = df["Assign_To"].unique()
 
-            df = read_csv_file(master_file)
-            
-            print("Master File =", master_file)
-            print(df.columns.tolist())
+    print("Unique Users Found:")
+    print(users)
+    
+    for user in users:
+        
+        print("Processing User:", user)
 
-            # Clean blanks
-            df["Project Name"] = df["Project Name"].fillna("Unknown")
-            df["Source Of Information"] = df["Source Of Information"].fillna("Other")
+        user_df = df[df["Assign_To"] == user]
 
-            projects = df["Project Name"].unique()
+        total = len(user_df)
 
-            # Clear previous data
-            cur.execute("DELETE FROM project_summary")
+        facebook = len(user_df[user_df["Enquiry_Source"].str.contains("facebook", case=False, na=False)])
+        instagram = len(user_df[user_df["Enquiry_Source"].str.contains("instagram", case=False, na=False)])
+        google = len(user_df[user_df["Enquiry_Source"].str.contains("google", case=False, na=False)])
+        website = len(user_df[user_df["Enquiry_Source"].str.contains("website", case=False, na=False)])
+        housing = len(user_df[user_df["Enquiry_Source"].str.contains("housing", case=False, na=False)])
+        magicbricks = len(user_df[user_df["Enquiry_Source"].str.contains("magic", case=False, na=False)])
+        acres99 = len(user_df[user_df["Enquiry_Source"].str.contains("99", case=False, na=False)])
+        walkin = len(user_df[user_df["Enquiry_Source"].str.contains("walk", case=False, na=False)])
+        email_campaign = len(user_df[user_df["Enquiry_Source"].str.contains("email", case=False, na=False)])
+        live_chat = len(user_df[user_df["Enquiry_Source"].str.contains("chat", case=False, na=False)])
 
-            for project in projects:
+        other = total - (
+            facebook + instagram + google + website +
+            housing + magicbricks + acres99 +
+            walkin + email_campaign + live_chat
+        )
 
-                project_df = df[df["Project Name"] == project]
+        project = user_df["Project_Code"].mode().iloc[0]
 
-                total = len(project_df)
+        print("Inserting:", user, project, total)
+        
+        cur.execute("""
+            INSERT INTO user_summary
+            (
+                user_name,
+                project_code,
+                today_leads,
+                facebook,
+                instagram,
+                google,
+                website,
+                housing,
+                magicbricks,
+                source_99acres,
+                walkin,
+                email_campaign,
+                live_chat,
+                other,
+                last_updated
+            )
+            VALUES
+            (
+                ?,?,?,?,?,?,?,?,?,?,?,?,?,?,
+                datetime('now')
+            )
+        """,
+        (
+            user,
+            project,
+            total,
+            facebook,
+            instagram,
+            google,
+            website,
+            housing,
+            magicbricks,
+            acres99,
+            walkin,
+            email_campaign,
+            live_chat,
+            other
+        ))
 
-                facebook = len(project_df[project_df["Source Of Information"].str.contains("facebook", case=False, na=False)])
-
-                instagram = len(project_df[project_df["Source Of Information"].str.contains("instagram", case=False, na=False)])
-
-                website = len(project_df[project_df["Source Of Information"].str.contains("website", case=False, na=False)])
-
-                google = len(project_df[project_df["Source Of Information"].str.contains("google", case=False, na=False)])
-
-                housing = len(project_df[project_df["Source Of Information"].str.contains("housing", case=False, na=False)])
-
-                magicbricks = len(project_df[project_df["Source Of Information"].str.contains("magic", case=False, na=False)])
-
-                acres99 = len(project_df[project_df["Source Of Information"].str.contains("99", case=False, na=False)])
-
-                walkin = len(project_df[project_df["Source Of Information"].str.contains("walk", case=False, na=False)])
-
-                email_campaign = len(project_df[project_df["Source Of Information"].str.contains("email", case=False, na=False)])
-
-                live_chat = len(project_df[project_df["Source Of Information"].str.contains("chat", case=False, na=False)])
-
-                other = total - (
-                    facebook + instagram + website + google +
-                    housing + magicbricks + acres99 +
-                    walkin + email_campaign + live_chat
-                )
-
-                cur.execute("""
-                INSERT INTO project_summary
-                (
-                    project_name,
-                    today_leads,
-                    total_leads,
-                    facebook,
-                    instagram,
-                    website,
-                    google,
-                    live_chat,
-                    email_campaign,
-                    walkin,
-                    housing,
-                    magicbricks,
-                    source_99acres,
-                    other,
-                    last_updated
-                )
-                VALUES
-                (
-                    ?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now')
-                )
-                """,
-                (
-                    project,
-                    total,
-                    total,
-                    facebook,
-                    instagram,
-                    website,
-                    google,
-                    live_chat,
-                    email_campaign,
-                    walkin,
-                    housing,
-                    magicbricks,
-                    acres99,
-                    other
-                ))
-
-            conn.commit()
-
-        print("Project Summary Updated")
+        print("User Summary Updated")
+        
+               
+        print("=" * 60)
+        print("USER SUMMARY STARTED")
+        print("Total rows in DataFrame:", len(df))
+        print("=" * 60)
         
         conn.commit()
         conn.close()

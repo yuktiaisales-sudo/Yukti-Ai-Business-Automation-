@@ -1,0 +1,5 @@
+<!-- In android/app/src/main/AndroidManifest.xml, inside <application ...> -->
+<application
+    android:label="Yukti-AI"
+    android:icon="@drawable/yukti_ai_app_icon"
+    ... >

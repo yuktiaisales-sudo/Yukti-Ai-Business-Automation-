@@ -1,0 +1,41 @@
+YUKTI-AI IN4 LEAD ASSIGNED REPORT AUTOMATION - DAILY FOLDER VERSION
+
+INPUT ROOT:
+D:\IT Pacifica\CRM\Leads Work\Year 2026 Leads
+
+The script automatically builds today's folder name:
+DD Month YYYY
+
+Example on 16 September 2026:
+D:\IT Pacifica\CRM\Leads Work\Year 2026 Leads\16 September 2026
+
+It then looks ONLY in today's folder for:
+LeadAssignedReport*.xlsx
+
+This prevents an old report from being accidentally loaded.
+
+EXPECTED DAILY FLOW:
+Morning Outlook Automation
+    ->
+Creates today's CRM Leads folder
+    ->
+In4 LeadAssignedReport Excel is placed there
+    ->
+Run In4_LeadAssignedReport_Automation.py
+    ->
+Yukti-AI SQLite DB updated
+    ->
+Mobile_Control.py reads DB
+    ->
+Mobile App shows latest In4 data
+
+IMPORTANT:
+The In4 Lead Assigned Report contains row-level fields such as
+Opportunity ID, Project Name, Enquiry Source and Assinged To.
+The previously described Outlook Sent Items report emails can provide
+summary information, but they are not a substitute for this row-level
+Excel unless the actual Excel is attached to the email.
+
+Therefore the safest current implementation is to read the daily CRM
+folder Excel. Direct Outlook reading can be added later if the exact
+Sent Items message/attachment contains the LeadAssignedReport data.

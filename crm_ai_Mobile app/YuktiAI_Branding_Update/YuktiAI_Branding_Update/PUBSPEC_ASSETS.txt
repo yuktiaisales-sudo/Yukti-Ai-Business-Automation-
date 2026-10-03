@@ -1,0 +1,9 @@
+Add this under flutter: in your existing pubspec.yaml:
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/images/yukti_ai_business_automation_logo.png
+    - assets/images/yukti_ai_app_icon.png
+
+Do not replace your existing pubspec.yaml. Only add the assets entries if they are not already present.

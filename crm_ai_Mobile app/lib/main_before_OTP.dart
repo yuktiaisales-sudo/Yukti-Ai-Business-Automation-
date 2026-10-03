@@ -1,0 +1,1442 @@
+import 'dart:async';
+import 'dart:convert';
+
+import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+
+void main() {
+  runApp(const YuktiAIApp());
+}
+
+class YuktiAIApp extends StatelessWidget {
+  const YuktiAIApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      title: 'Yukti-AI Business Automation',
+      theme: ThemeData(
+        useMaterial3: true,
+        scaffoldBackgroundColor: const Color(0xFFF6F7FB),
+        fontFamily: 'Arial',
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: const Color(0xFF3157D5),
+        ),
+      ),
+      home: const CrmUrlScreen(),
+    );
+  }
+}
+
+// ============================================================
+// YUKTI-AI BRANDING
+// ============================================================
+class YuktiBrandLogo extends StatelessWidget {
+  final double height;
+  final bool iconOnly;
+
+  const YuktiBrandLogo({super.key, this.height = 70, this.iconOnly = false});
+
+  @override
+  Widget build(BuildContext context) {
+    if (iconOnly) {
+      return Image.asset(
+        'assets/images/yukti_ai_app_icon.png',
+        width: height,
+        height: height,
+        fit: BoxFit.contain,
+      );
+    }
+    return Image.asset(
+      'assets/images/yukti_ai_business_automation_logo.png',
+      height: height,
+      fit: BoxFit.contain,
+    );
+  }
+}
+
+// ============================================================
+// CRM CONNECTION - URL VALIDATION
+// ============================================================
+class CrmConnectionService {
+  static Future<CrmUrlResult> validateUrl(String value) async {
+    var text = value.trim();
+
+    if (text.isEmpty) {
+      return const CrmUrlResult(false, 'Please enter your CRM URL.');
+    }
+
+    if (!text.startsWith('http://') && !text.startsWith('https://')) {
+      text = 'https://$text';
+    }
+
+    final uri = Uri.tryParse(text);
+
+    if (uri == null || uri.host.isEmpty) {
+      return const CrmUrlResult(false, 'Please enter a valid CRM URL.');
+    }
+
+    // We validate the URL and try to reach it. Some CRMs reject automated
+    // requests, so a network rejection does not automatically mean the URL
+    // is invalid.
+    try {
+      final response = await http.get(uri).timeout(
+        const Duration(seconds: 8),
+      );
+
+      if (response.statusCode >= 200 && response.statusCode < 500) {
+        return CrmUrlResult(
+          true,
+          'CRM URL is reachable.',
+          normalizedUrl: uri.toString(),
+        );
+      }
+    } catch (_) {}
+
+    return CrmUrlResult(
+      true,
+      'CRM URL format is valid. Continue with login.',
+      normalizedUrl: uri.toString(),
+    );
+  }
+}
+
+class CrmUrlResult {
+  final bool success;
+  final String message;
+  final String? normalizedUrl;
+
+  const CrmUrlResult(
+    this.success,
+    this.message, {
+    this.normalizedUrl,
+  });
+}
+
+
+// ============================================================
+// SCREEN 1 - CRM URL
+// ============================================================
+
+class CrmUrlScreen extends StatefulWidget {
+  const CrmUrlScreen({super.key});
+
+  @override
+  State<CrmUrlScreen> createState() => _CrmUrlScreenState();
+}
+
+class _CrmUrlScreenState extends State<CrmUrlScreen> {
+  final _urlController = TextEditingController();
+  bool _checking = false;
+  String? _error;
+
+  Future<void> _go() async {
+    FocusScope.of(context).unfocus();
+
+    setState(() {
+      _checking = true;
+      _error = null;
+    });
+
+    final result = await CrmConnectionService.validateUrl(
+      _urlController.text,
+    );
+
+    if (!mounted) return;
+
+    setState(() => _checking = false);
+
+    if (!result.success) {
+      setState(() => _error = result.message);
+      return;
+    }
+
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => CrmLoginScreen(
+          crmUrl: result.normalizedUrl ?? _urlController.text.trim(),
+        ),
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _urlController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(26, 24, 26, 20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const SizedBox(height: 30),
+              Center(
+                child: YuktiBrandLogo(height: 155),
+              ),
+              const SizedBox(height: 62),
+              const Text(
+                'Connect your CRM',
+                style: TextStyle(
+                  fontSize: 30,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -0.8,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                'Enter the CRM address you use on your laptop or PC.',
+                style: TextStyle(
+                  fontSize: 15,
+                  height: 1.5,
+                  color: Colors.grey.shade600,
+                ),
+              ),
+              const SizedBox(height: 30),
+              const Text(
+                'CRM URL',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 9),
+              TextField(
+                controller: _urlController,
+                keyboardType: TextInputType.url,
+                textInputAction: TextInputAction.go,
+                onSubmitted: (_) => _go(),
+                decoration: InputDecoration(
+                  hintText: 'https://your-crm.com',
+                  prefixIcon: const Icon(Icons.language_rounded),
+                  errorText: _error,
+                  filled: true,
+                  fillColor: Colors.white,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(16),
+                    borderSide: BorderSide.none,
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(16),
+                    borderSide: BorderSide(color: Colors.grey.shade200),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(16),
+                    borderSide: const BorderSide(
+                      color: Color(0xFF3157D5),
+                      width: 1.5,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 18),
+              SizedBox(
+                height: 56,
+                child: FilledButton(
+                  onPressed: _checking ? null : _go,
+                  style: FilledButton.styleFrom(
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                  ),
+                  child: _checking
+                      ? const SizedBox(
+                          width: 22,
+                          height: 22,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2.4,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(
+                              'GO',
+                              style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            SizedBox(width: 9),
+                            Icon(Icons.arrow_forward_rounded),
+                          ],
+                        ),
+                ),
+              ),
+              const Spacer(),
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(color: Colors.grey.shade200),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.lock_outline_rounded,
+                      color: Colors.grey.shade700,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'Your CRM credentials will be requested only after this CRM URL step.',
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          height: 1.45,
+                          color: Colors.grey.shade700,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              Center(
+                child: Text(
+                  'YUKTI-AI  •  Business Automation',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.grey.shade500,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+
+// ============================================================
+// SCREEN 2 - CRM LOGIN
+// ============================================================
+
+class CrmLoginScreen extends StatefulWidget {
+  final String crmUrl;
+
+  const CrmLoginScreen({
+    super.key,
+    required this.crmUrl,
+  });
+
+  @override
+  State<CrmLoginScreen> createState() => _CrmLoginScreenState();
+}
+
+class _CrmLoginScreenState extends State<CrmLoginScreen> {
+  final _usernameController = TextEditingController();
+  final _passwordController = TextEditingController();
+
+  bool _obscure = true;
+  bool _connecting = false;
+
+  Future<void> _connect() async {
+    FocusScope.of(context).unfocus();
+
+    if (_usernameController.text.trim().isEmpty ||
+        _passwordController.text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please enter username and password.'),
+        ),
+      );
+      return;
+    }
+
+    setState(() => _connecting = true);
+
+    // UI/navigation stage only.
+    // Real CRM authentication will be connected next.
+    await Future.delayed(const Duration(milliseconds: 700));
+
+    if (!mounted) return;
+
+    setState(() => _connecting = false);
+
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(
+        builder: (_) => const DashboardScreen(),
+      ),
+      (route) => false,
+    );
+  }
+
+  @override
+  void dispose() {
+    _usernameController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text(
+          'Yukti-AI',
+          style: TextStyle(fontWeight: FontWeight.w800),
+        ),
+        backgroundColor: Colors.transparent,
+      ),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(26, 20, 26, 30),
+        children: [
+          Container(
+            padding: const EdgeInsets.all(15),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: Colors.grey.shade200),
+            ),
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.link_rounded,
+                  color: Color(0xFF3157D5),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    widget.crmUrl,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 30),
+          const Text(
+            'Sign in to your CRM',
+            style: TextStyle(
+              fontSize: 29,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 9),
+          Text(
+            'Use the same CRM username and password you use on your computer.',
+            style: TextStyle(
+              color: Colors.grey.shade600,
+              height: 1.5,
+            ),
+          ),
+          const SizedBox(height: 28),
+          const Text(
+            'Username',
+            style: TextStyle(
+              fontWeight: FontWeight.w700,
+              fontSize: 13,
+            ),
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _usernameController,
+            textInputAction: TextInputAction.next,
+            decoration: InputDecoration(
+              hintText: 'Enter CRM username',
+              prefixIcon: const Icon(Icons.person_outline_rounded),
+              filled: true,
+              fillColor: Colors.white,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(16),
+                borderSide: BorderSide(color: Colors.grey.shade200),
+              ),
+            ),
+          ),
+          const SizedBox(height: 18),
+          const Text(
+            'Password',
+            style: TextStyle(
+              fontWeight: FontWeight.w700,
+              fontSize: 13,
+            ),
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _passwordController,
+            obscureText: _obscure,
+            textInputAction: TextInputAction.done,
+            onSubmitted: (_) => _connect(),
+            decoration: InputDecoration(
+              hintText: 'Enter CRM password',
+              prefixIcon: const Icon(Icons.lock_outline_rounded),
+              suffixIcon: IconButton(
+                onPressed: () {
+                  setState(() => _obscure = !_obscure);
+                },
+                icon: Icon(
+                  _obscure
+                      ? Icons.visibility_outlined
+                      : Icons.visibility_off_outlined,
+                ),
+              ),
+              filled: true,
+              fillColor: Colors.white,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(16),
+                borderSide: BorderSide(color: Colors.grey.shade200),
+              ),
+            ),
+          ),
+          const SizedBox(height: 24),
+          SizedBox(
+            height: 56,
+            child: FilledButton(
+              onPressed: _connecting ? null : _connect,
+              style: FilledButton.styleFrom(
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+              ),
+              child: _connecting
+                  ? const SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.4,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Text(
+                      'CONNECT TO CRM',
+                      style: TextStyle(fontWeight: FontWeight.w800),
+                    ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+
+// ============================================================
+// EXISTING YUKTI-AI HOME / DASHBOARD
+// Preserved from the uploaded 20 KB+ main.dart.
+// ============================================================
+class DashboardScreen extends StatefulWidget {
+  const DashboardScreen({super.key});
+
+  @override
+  State<DashboardScreen> createState() => _DashboardScreenState();
+}
+
+class _DashboardScreenState extends State<DashboardScreen> {
+  static const String apiBaseUrl = 'http://172.168.1.22:5050';
+
+  String selectedPeriod = 'This Month';
+  String selectedProject = 'All';
+
+  int totalLeads = 0;
+  int todayLeads = 0;
+      Map<String, int> projectCounts = {};
+  String? lastSync;
+
+  bool isLoading = false;
+  bool isConnected = false;
+
+  int currentIndex = 0;
+  Timer? _syncTimer;
+
+  final periods = ['Today', 'Yesterday', 'This Week', 'This Month', 'Last Month'];
+  List<String> projects = ['All'];
+
+  @override
+  void initState() {
+    super.initState();
+    fetchData();
+
+    // Near-real-time polling. The existing PC backend remains the source
+    // of truth; the mobile app checks for updated data every 30 seconds.
+    _syncTimer = Timer.periodic(
+      const Duration(seconds: 30),
+      (_) => fetchData(silent: true),
+    );
+  }
+
+  @override
+  void dispose() {
+    _syncTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> fetchData({bool silent = false}) async {
+    if (!silent && mounted) {
+      setState(() => isLoading = true);
+    }
+
+    try {
+      final uri = Uri.parse(
+        '$apiBaseUrl/api/mobile/in4-data'
+        '?period=${Uri.encodeComponent(selectedPeriod)}'
+        '&project=${Uri.encodeComponent(selectedProject)}',
+      );
+
+      final response =
+          await http.get(uri).timeout(const Duration(seconds: 10));
+
+      if (response.statusCode != 200) {
+        throw Exception('Server returned ${response.statusCode}');
+      }
+
+      final data = json.decode(response.body);
+
+      if (data['success'] != true) {
+        throw Exception(data['message'] ?? 'In4 Mobile API returned an error.');
+      }
+
+      final availableProjects = <String>['All'];
+      final rawProjects = data['available_projects'];
+
+      if (rawProjects is List) {
+        for (final item in rawProjects) {
+          final name = '$item'.trim();
+          if (name.isNotEmpty && !availableProjects.contains(name)) {
+            availableProjects.add(name);
+          }
+        }
+      }
+
+      // If the current selection is not present in the latest report,
+      // safely return to All rather than breaking the dropdown.
+      final safeSelectedProject =
+          availableProjects.contains(selectedProject)
+              ? selectedProject
+              : 'All';
+
+      final rawCounts = data['project_counts'];
+      final counts = <String, int>{};
+
+      if (rawCounts is Map) {
+        rawCounts.forEach((key, value) {
+          counts['$key'] = _toInt(value);
+        });
+      }
+
+      if (!mounted) return;
+
+      setState(() {
+        totalLeads = _toInt(data['total_leads']);
+        todayLeads = _toInt(data['today_leads']);
+        projectCounts = counts;
+        projects = availableProjects;
+        selectedProject = safeSelectedProject;
+        lastSync = data['last_run']?.toString();
+        isConnected = data['connected'] == true;
+        isLoading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        isConnected = false;
+        if (!silent) isLoading = false;
+      });
+    }
+  }
+
+  Future<void> _logOff() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Log Off?', style: TextStyle(fontWeight: FontWeight.w800)),
+        content: const Text('Are you sure you want to log off from Yukti-AI?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Log Off'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const CrmUrlScreen()),
+      (route) => false,
+    );
+  }
+
+  int _toInt(dynamic value) =>
+      value is int ? value : int.tryParse('$value') ?? 0;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: SafeArea(
+        child: IndexedStack(
+          index: currentIndex,
+          children: [
+            _dashboard(),
+            _placeholder('Leads', Icons.groups_rounded,
+                'Manage and monitor your business leads.'),
+            _placeholder('Automations', Icons.smart_toy_rounded,
+                'Monitor your Yukti-AI business workflows.'),
+            ReportsScreen(
+              apiBaseUrl: apiBaseUrl,
+              initialPeriod: selectedPeriod,
+            ),
+            _placeholder('Settings', Icons.settings_rounded,
+                'Manage your Yukti-AI business environment.'),
+          ],
+        ),
+      ),
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: currentIndex,
+        onDestinationSelected: (i) => setState(() => currentIndex = i),
+        height: 72,
+        destinations: const [
+          NavigationDestination(
+              icon: Icon(Icons.home_outlined),
+              selectedIcon: Icon(Icons.home_rounded),
+              label: 'Home'),
+          NavigationDestination(
+              icon: Icon(Icons.groups_outlined),
+              selectedIcon: Icon(Icons.groups_rounded),
+              label: 'Leads'),
+          NavigationDestination(
+              icon: Icon(Icons.smart_toy_outlined),
+              selectedIcon: Icon(Icons.smart_toy_rounded),
+              label: 'Automation'),
+          NavigationDestination(
+              icon: Icon(Icons.bar_chart_outlined),
+              selectedIcon: Icon(Icons.bar_chart_rounded),
+              label: 'Reports'),
+          NavigationDestination(
+              icon: Icon(Icons.settings_outlined),
+              selectedIcon: Icon(Icons.settings_rounded),
+              label: 'Settings'),
+        ],
+      ),
+    );
+  }
+
+  Widget _dashboard() {
+    return RefreshIndicator(
+      onRefresh: fetchData,
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(20, 18, 20, 30),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _header(),
+            const SizedBox(height: 18),
+            _connection(),
+            const SizedBox(height: 18),
+            Row(
+              children: [
+                Expanded(
+                  child: _filter(
+                    'PERIOD',
+                    selectedPeriod,
+                    periods,
+                    Icons.calendar_today_outlined,
+                    (v) {
+                      if (v == null) return;
+                      setState(() => selectedPeriod = v);
+                      fetchData();
+                    },
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _filter(
+                    'PROJECT',
+                    selectedProject,
+                    projects,
+                    Icons.business_outlined,
+                    (v) {
+                      if (v == null) return;
+                      setState(() => selectedProject = v);
+                      fetchData();
+                    },
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 22),
+            const Text(
+              'Business Overview',
+              style: TextStyle(
+                fontSize: 25,
+                fontWeight: FontWeight.w800,
+                color: Color(0xFF20232D),
+              ),
+            ),
+            const SizedBox(height: 5),
+            const Text(
+              'Monitor your business performance and automation health.',
+              style: TextStyle(fontSize: 13, color: Color(0xFF777B87)),
+            ),
+            const SizedBox(height: 18),
+            Row(
+              children: [
+                Expanded(
+                  child: _kpi(
+                    'TOTAL LEADS',
+                    '$totalLeads',
+                    selectedPeriod,
+                    Icons.groups_rounded,
+                  ),
+                ),
+                const SizedBox(width: 13),
+                Expanded(
+                  child: _kpi(
+                    "TODAY'S LEADS",
+                    '$todayLeads',
+                    'Today',
+                    Icons.trending_up_rounded,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 22),
+            _section(
+              'Lead Performance',
+              'Lead activity overview',
+              Icons.analytics_outlined,
+              SizedBox(
+                height: 150,
+                child: CustomPaint(
+                  painter: _ChartPainter(),
+                  child: const SizedBox.expand(),
+                ),
+              ),
+            ),
+            const SizedBox(height: 22),
+            _section(
+              'Project Performance',
+              'Live leads by project',
+              Icons.business_outlined,
+              Column(
+                children: projects
+                    .where((p) => p != 'All')
+                    .map((p) => _project(
+                          p,
+                          totalLeads == 0
+                              ? 0
+                              : (projectCounts[p] ?? 0) / totalLeads,
+                          projectCounts[p] ?? 0,
+                        ))
+                    .toList(),
+              ),
+            ),
+            const SizedBox(height: 22),
+            _section(
+              'Automation Health',
+              'Your automation environment',
+              Icons.smart_toy_outlined,
+              Column(
+                children: [
+                  _status('Outlook Lead Reader', 'Healthy'),
+                  _status('Excel / Master File', 'Healthy'),
+                  _status('In4 CRM Report', 'Connected'),
+                  _status('Power BI', 'Connected'),
+                ],
+              ),
+            ),
+            const SizedBox(height: 22),
+            _section(
+              "Today's Activity",
+              'Latest business automation activity',
+              Icons.history_rounded,
+              Column(
+                children: [
+                  _activity('Marketing Leads', 'Automation ready'),
+                  _activity('CRM Upload', 'System monitoring active'),
+                  _activity('Dashboard', 'Data synchronized'),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _header() => Row(
+        children: [
+          // Full Yukti-AI Business Automation branding on the Dashboard.
+          // The separate icon-only asset is still used where a compact logo
+          // is required elsewhere in the app.
+          SizedBox(
+            width: 190,
+            height: 62,
+            child: Image.asset(
+              'assets/images/yukti_ai_business_automation_logo.png',
+              fit: BoxFit.contain,
+              alignment: Alignment.centerLeft,
+            ),
+          ),
+          const Spacer(),
+          IconButton(
+            tooltip: 'Notifications',
+            onPressed: () {},
+            icon: const Icon(Icons.notifications_none_rounded),
+          ),
+          IconButton(
+            tooltip: 'Log Off',
+            onPressed: _logOff,
+            icon: const Icon(Icons.logout_rounded),
+          ),
+        ],
+      );
+
+  Widget _connection() => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 11),
+        decoration: BoxDecoration(
+          color: isConnected
+              ? const Color(0xFFEAF8F0)
+              : const Color(0xFFFFF4E5),
+          borderRadius: BorderRadius.circular(15),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              Icons.circle,
+              size: 10,
+              color: isConnected
+                  ? const Color(0xFF22A861)
+                  : const Color(0xFFE99A2E),
+            ),
+            const SizedBox(width: 9),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    isConnected
+                        ? 'In4 CRM Connected'
+                        : 'In4 CRM Connection Unavailable',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      color: isConnected
+                          ? const Color(0xFF187847)
+                          : const Color(0xFF9A641C),
+                    ),
+                  ),
+                  if (isConnected && lastSync != null)
+                    Text(
+                      'Last sync: $lastSync',
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: Colors.grey.shade600,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            if (isLoading)
+              const SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            else
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                onPressed: fetchData,
+                icon: const Icon(Icons.refresh_rounded),
+              ),
+          ],
+        ),
+      );
+
+  Widget _filter(
+    String label,
+    String value,
+    List<String> items,
+    IconData icon,
+    ValueChanged<String?> onChanged,
+  ) =>
+      Container(
+        padding: const EdgeInsets.fromLTRB(12, 8, 7, 4),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(15),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(icon, size: 12, color: const Color(0xFF737784)),
+                const SizedBox(width: 5),
+                Text(label,
+                    style: const TextStyle(
+                        fontSize: 9,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: .7,
+                        color: Color(0xFF898D98))),
+              ],
+            ),
+            DropdownButtonHideUnderline(
+              child: DropdownButton<String>(
+                value: value,
+                isExpanded: true,
+                icon: const Icon(Icons.keyboard_arrow_down_rounded),
+                style: const TextStyle(
+                    color: Color(0xFF252833),
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700),
+                items: items
+                    .map((e) =>
+                        DropdownMenuItem(value: e, child: Text(e)))
+                    .toList(),
+                onChanged: onChanged,
+              ),
+            ),
+          ],
+        ),
+      );
+
+  Widget _kpi(String title, String value, String subtitle, IconData icon) =>
+      Container(
+        padding: const EdgeInsets.all(17),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              blurRadius: 24,
+              offset: const Offset(0, 7),
+              color: Colors.black.withValues(alpha: .04),
+            )
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(icon, color: const Color(0xFF3157D5), size: 25),
+            const SizedBox(height: 15),
+            Text(title,
+                style: const TextStyle(
+                    fontSize: 10,
+                    letterSpacing: .7,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFF888C97))),
+            const SizedBox(height: 4),
+            Text(value,
+                style: const TextStyle(
+                    fontSize: 28, fontWeight: FontWeight.w800)),
+            const SizedBox(height: 3),
+            Text(subtitle,
+                style: const TextStyle(
+                    fontSize: 11, color: Color(0xFF9295A0))),
+          ],
+        ),
+      );
+
+  Widget _section(String title, String subtitle, IconData icon, Widget child) =>
+      Container(
+        width: double.infinity,
+        padding: const EdgeInsets.fromLTRB(17, 17, 17, 18),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              blurRadius: 25,
+              offset: const Offset(0, 7),
+              color: Colors.black.withValues(alpha: .04),
+            )
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(title,
+                          style: const TextStyle(
+                              fontSize: 16, fontWeight: FontWeight.w800)),
+                      const SizedBox(height: 3),
+                      Text(subtitle,
+                          style: const TextStyle(
+                              fontSize: 11, color: Color(0xFF9497A1))),
+                    ],
+                  ),
+                ),
+                Icon(icon, color: const Color(0xFF3157D5)),
+              ],
+            ),
+            const SizedBox(height: 5),
+            child,
+          ],
+        ),
+      );
+
+  Widget _project(String name, double progress, int value) => Padding(
+        padding: const EdgeInsets.only(top: 14),
+        child: Column(
+          children: [
+            Row(
+              children: [
+                Expanded(
+                    child: Text(name,
+                        style: const TextStyle(
+                            fontSize: 13, fontWeight: FontWeight.w700))),
+                Text(value == 0 ? '--' : '$value',
+                    style: const TextStyle(fontWeight: FontWeight.w800)),
+              ],
+            ),
+            const SizedBox(height: 8),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: LinearProgressIndicator(
+                value: progress,
+                minHeight: 7,
+                backgroundColor: const Color(0xFFEEF0F5),
+              ),
+            ),
+          ],
+        ),
+      );
+
+  Widget _status(String title, String status) => Padding(
+        padding: const EdgeInsets.only(top: 14),
+        child: Row(
+          children: [
+            const Icon(Icons.check_circle_rounded,
+                size: 19, color: Color(0xFF22A861)),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(title,
+                  style: const TextStyle(
+                      fontSize: 13, fontWeight: FontWeight.w700)),
+            ),
+            Text(status,
+                style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF21844E))),
+          ],
+        ),
+      );
+
+  Widget _activity(String title, String subtitle) => Padding(
+        padding: const EdgeInsets.only(top: 14),
+        child: Row(
+          children: [
+            const Icon(Icons.check_circle_outline_rounded,
+                color: Color(0xFF3157D5)),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title,
+                      style: const TextStyle(
+                          fontSize: 13, fontWeight: FontWeight.w700)),
+                  Text(subtitle,
+                      style: const TextStyle(
+                          fontSize: 11, color: Color(0xFF9295A0))),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+
+
+  Widget _placeholder(String title, IconData icon, String subtitle) =>
+      SingleChildScrollView(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(icon, size: 45, color: const Color(0xFF3157D5)),
+            const SizedBox(height: 15),
+            Text(title,
+                style: const TextStyle(
+                    fontSize: 28, fontWeight: FontWeight.w800)),
+            const SizedBox(height: 5),
+            Text(subtitle,
+                style: const TextStyle(
+                    fontSize: 13, color: Color(0xFF777B87))),
+            const SizedBox(height: 25),
+            const Card(
+              child: Padding(
+                padding: EdgeInsets.all(20),
+                child: Text(
+                  'This section is part of the Yukti-AI global platform and will be connected in the next development stage.',
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+}
+
+
+class ReportsScreen extends StatefulWidget {
+  final String apiBaseUrl;
+  final String initialPeriod;
+
+  const ReportsScreen({
+    super.key,
+    required this.apiBaseUrl,
+    required this.initialPeriod,
+  });
+
+  @override
+  State<ReportsScreen> createState() => _ReportsScreenState();
+}
+
+class _ReportsScreenState extends State<ReportsScreen> {
+  late String selectedPeriod;
+  bool loading = true;
+  String? error;
+  int totalLeads = 0;
+  Map<String, dynamic> users = {};
+
+  final periods = const ['Today', 'Yesterday', 'This Week', 'This Month', 'Last Month'];
+
+  @override
+  void initState() {
+    super.initState();
+    selectedPeriod = periods.contains(widget.initialPeriod) ? widget.initialPeriod : 'This Month';
+    fetchReport();
+  }
+
+  String _apiPeriod(String p) {
+    switch (p) {
+      case 'Today': return 'today';
+      case 'Yesterday': return 'yesterday';
+      case 'This Week': return 'this_week';
+      case 'Last Month': return 'last_month';
+      default: return 'this_month';
+    }
+  }
+
+  int _int(dynamic v) => v is int ? v : int.tryParse('$v') ?? 0;
+
+  int _total(dynamic map) {
+    if (map is! Map) return 0;
+    var n = 0;
+    map.forEach((_, v) => n += _int(v));
+    return n;
+  }
+
+  Future<void> fetchReport() async {
+    setState(() { loading = true; error = null; });
+    try {
+      final uri = Uri.parse('${widget.apiBaseUrl}/api/mobile/in4-data?period=${Uri.encodeComponent(_apiPeriod(selectedPeriod))}');
+      final response = await http.get(uri).timeout(const Duration(seconds: 10));
+      if (response.statusCode != 200) throw Exception('Server returned ${response.statusCode}');
+      final data = json.decode(response.body);
+      if (data['success'] != true) throw Exception(data['message'] ?? 'Report error');
+      final raw = data['user_project_source_counts'];
+      final parsed = <String, dynamic>{};
+      if (raw is Map) raw.forEach((k, v) => parsed['$k'] = v);
+      if (!mounted) return;
+      setState(() {
+        totalLeads = _int(data['total_leads']);
+        users = parsed;
+        loading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() { loading = false; error = 'Unable to load report data.'; });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return RefreshIndicator(
+      onRefresh: fetchReport,
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(20, 18, 20, 30),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('Reports', style: TextStyle(fontSize: 28, fontWeight: FontWeight.w800)),
+              SizedBox(height: 5),
+              Text('Lead performance by user, project and source.', style: TextStyle(fontSize: 13, color: Color(0xFF777B87))),
+            ])),
+            IconButton(onPressed: loading ? null : fetchReport, icon: const Icon(Icons.refresh_rounded)),
+          ]),
+          const SizedBox(height: 18),
+          _periodFilter(),
+          const SizedBox(height: 18),
+          _summary(),
+          const SizedBox(height: 22),
+          if (loading) const Center(child: Padding(padding: EdgeInsets.all(40), child: CircularProgressIndicator()))
+          else if (error != null) _error()
+          else if (users.isEmpty) _empty()
+          else ..._userCards(),
+        ]),
+      ),
+    );
+  }
+
+  Widget _periodFilter() => Container(
+    width: double.infinity,
+    padding: const EdgeInsets.fromLTRB(14, 8, 10, 4),
+    decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16)),
+    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      const Text('REPORT PERIOD', style: TextStyle(fontSize: 9, fontWeight: FontWeight.w800, letterSpacing: .7, color: Color(0xFF898D98))),
+      DropdownButtonHideUnderline(child: DropdownButton<String>(
+        value: selectedPeriod,
+        isExpanded: true,
+        items: periods.map((p) => DropdownMenuItem(value: p, child: Text(p))).toList(),
+        onChanged: (v) { if (v == null) return; setState(() => selectedPeriod = v); fetchReport(); },
+      )),
+    ]),
+  );
+
+  Widget _summary() => Container(
+    width: double.infinity,
+    padding: const EdgeInsets.all(18),
+    decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20), boxShadow: [BoxShadow(blurRadius: 24, offset: const Offset(0, 7), color: Colors.black.withValues(alpha: .04))]),
+    child: Row(children: [
+      Container(width: 48, height: 48, decoration: BoxDecoration(color: const Color(0xFFEFF2FF), borderRadius: BorderRadius.circular(14)), child: const Icon(Icons.bar_chart_rounded, color: Color(0xFF3157D5))),
+      const SizedBox(width: 14),
+      Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const Text('TOTAL LEADS', style: TextStyle(fontSize: 10, letterSpacing: .7, fontWeight: FontWeight.w800, color: Color(0xFF888C97))),
+        Text('$totalLeads', style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w800)),
+        Text(selectedPeriod, style: const TextStyle(fontSize: 11, color: Color(0xFF9295A0))),
+      ]),
+    ]),
+  );
+
+  List<Widget> _userCards() {
+    final out = <Widget>[];
+    users.forEach((user, projectData) {
+      if (projectData is! Map) return;
+      var userTotal = 0;
+      projectData.forEach((_, sources) => userTotal += _total(sources));
+      out.add(Container(
+        width: double.infinity,
+        margin: const EdgeInsets.only(bottom: 18),
+        padding: const EdgeInsets.fromLTRB(17, 17, 17, 18),
+        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20), boxShadow: [BoxShadow(blurRadius: 25, offset: const Offset(0, 7), color: Colors.black.withValues(alpha: .04))]),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            const Icon(Icons.person_outline_rounded, color: Color(0xFF3157D5)),
+            const SizedBox(width: 10),
+            Expanded(child: Text('$user', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800))),
+            Text('$userTotal', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: Color(0xFF3157D5))),
+          ]),
+          const SizedBox(height: 10),
+          ..._projects(projectData),
+        ]),
+      ));
+    });
+    return out;
+  }
+
+  List<Widget> _projects(Map data) {
+    final out = <Widget>[];
+    data.forEach((project, sourceData) {
+      if (sourceData is! Map) return;
+      final total = _total(sourceData);
+      out.add(Container(
+        margin: const EdgeInsets.only(top: 8),
+        padding: const EdgeInsets.fromLTRB(13, 12, 13, 12),
+        decoration: BoxDecoration(color: const Color(0xFFF8F9FC), borderRadius: BorderRadius.circular(14)),
+        child: Column(children: [
+          Row(children: [
+            const Icon(Icons.business_outlined, size: 17, color: Color(0xFF3157D5)),
+            const SizedBox(width: 7),
+            Expanded(child: Text('$project', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800))),
+            Text('$total', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800)),
+          ]),
+          ..._sources(sourceData),
+        ]),
+      ));
+    });
+    return out;
+  }
+
+  List<Widget> _sources(Map data) => data.entries.map((e) => Padding(
+    padding: const EdgeInsets.only(top: 7),
+    child: Row(children: [
+      const SizedBox(width: 24),
+      const Icon(Icons.arrow_right_rounded, size: 17, color: Color(0xFF9295A0)),
+      const SizedBox(width: 3),
+      Expanded(child: Text('${e.key}', style: const TextStyle(fontSize: 12, color: Color(0xFF5E626E)))),
+      Text('${_int(e.value)}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800)),
+    ]),
+  )).toList();
+
+  Widget _empty() => const Card(child: Padding(padding: EdgeInsets.all(30), child: Center(child: Text('No lead assignments were found for this period.'))));
+
+  Widget _error() => Card(child: Padding(padding: const EdgeInsets.all(22), child: Column(children: [
+    const Icon(Icons.cloud_off_rounded, size: 40, color: Color(0xFFE99A2E)),
+    const SizedBox(height: 10),
+    const Text('Report unavailable', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
+    const SizedBox(height: 12),
+    FilledButton.icon(onPressed: fetchReport, icon: const Icon(Icons.refresh_rounded), label: const Text('Retry')),
+  ])));
+}
+
+class _ChartPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final grid = Paint()
+      ..color = const Color(0xFFEDEFF4)
+      ..strokeWidth = 1;
+
+    final line = Paint()
+      ..color = const Color(0xFF3157D5)
+      ..strokeWidth = 3
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
+
+    for (int i = 1; i <= 4; i++) {
+      final y = size.height * i / 5;
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), grid);
+    }
+
+    final points = [
+      Offset(0, size.height * .68),
+      Offset(size.width * .16, size.height * .57),
+      Offset(size.width * .33, size.height * .62),
+      Offset(size.width * .50, size.height * .35),
+      Offset(size.width * .67, size.height * .48),
+      Offset(size.width * .83, size.height * .23),
+      Offset(size.width, size.height * .30),
+    ];
+
+    final path = Path()..moveTo(points.first.dx, points.first.dy);
+    for (final p in points.skip(1)) {
+      path.lineTo(p.dx, p.dy);
+    }
+    canvas.drawPath(path, line);
+
+    final dot = Paint()..color = const Color(0xFF3157D5);
+    for (final p in points) {
+      canvas.drawCircle(p, 4, dot);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}

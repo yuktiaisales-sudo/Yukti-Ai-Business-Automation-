@@ -1,0 +1,37 @@
+{
+  "success": true,
+  "records": 215,
+  "report_date_from": "2026-09-14",
+  "report_date_to": "2026-09-14",
+  "project_wise": {
+    "AMARA": 57,
+    "HILLCREST PHASE 2": 54,
+    "PACIFICA ONE": 40,
+    "ENCHANTE": 39,
+    "BLISS TOWER": 15,
+    "AURUM VILLA PH-3": 7,
+    "AURUM VILLA PH-2": 3
+  },
+  "source_wise": {
+    "Facebook": 124,
+    "Instagram": 82,
+    "Website": 9
+  },
+  "assigned_to_wise": {
+    "Upendra Bharkhada": 30,
+    "Amit Labha": 30,
+    "Suraj Bhambri": 27,
+    "G V Harini": 19,
+    "Syed Sameer": 18,
+    "Manikanta Adimulam": 17,
+    "Narendran Ravi": 13,
+    "G Gogilakannan": 13,
+    "Mohammed Yasin M": 13,
+    "Saurabh Paarekh": 10,
+    "Arun Bharathi": 7,
+    "Prathab Kumar K": 6,
+    "DIPAN MUTHU": 5,
+    "Ganeshkumar Sathishkumar": 5,
+    "Bavani Parasuram": 2
+  }
+}

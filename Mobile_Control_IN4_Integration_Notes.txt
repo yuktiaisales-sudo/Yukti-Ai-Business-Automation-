@@ -1,0 +1,20 @@
+YUKTI-AI Mobile Control - In4 Integration
+
+New endpoint:
+    GET /api/mobile/in4-data
+
+Examples:
+    /api/mobile/in4-data?period=this_month
+    /api/mobile/in4-data?period=today
+    /api/mobile/in4-data?period=this_month&project=AMARA
+    /api/mobile/in4-data?period=this_month&source=Facebook
+    /api/mobile/in4-data?period=this_month&user=Some%20User
+
+The existing /api/mobile/data endpoint is preserved unchanged.
+The new endpoint reads the SQLite database produced by
+In4_LeadAssignedReport_Automation.py.
+
+Database expected:
+D:\Yukti-Ai Business Automation\In4 Lead Report Automation\yuktiai_in4.db
+
+This is read-only and does not change CRM data.
